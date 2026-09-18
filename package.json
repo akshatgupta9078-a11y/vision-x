@@ -5,12 +5,12 @@
   "main": "server.js",
   "type": "commonjs",
   "engines": {
-    "node": ">=22.5.0"
+    "node": "22.13.0"
   },
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js",
-    "seed": "node data/seed.js"
+    "start": "node --experimental-sqlite server.js",
+    "dev": "nodemon --experimental-sqlite server.js",
+    "seed": "node --experimental-sqlite data/seed.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

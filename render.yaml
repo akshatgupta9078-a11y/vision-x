@@ -11,4 +11,4 @@ services:
       - key: JWT_EXPIRES_IN
         value: 8h
       - key: NODE_VERSION
-        value: 22.12.0
+        value: 22.13.0
