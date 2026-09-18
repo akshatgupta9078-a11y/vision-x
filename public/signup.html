@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VISION-X — Create account</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="login-shell">
+    <div class="login-box">
+      <h1>VISION-X</h1>
+      <p class="sub">Create your account</p>
+
+      <div id="signupMsg"></div>
+
+      <form class="stacked" id="signupForm">
+        <label for="name">Full name</label>
+        <input type="text" id="name" required>
+
+        <label for="email">Email</label>
+        <input type="email" id="email" required>
+
+        <label for="password">Password (min 6 characters)</label>
+        <input type="password" id="password" minlength="6" required>
+
+        <label for="role">I am a</label>
+        <select id="role" required>
+          <option value="" disabled selected>Choose your role</option>
+          <option value="pmu">PMU / Inspection officer</option>
+          <option value="ngo">NGO / Institute representative</option>
+          <option value="authority">State / District Authority</option>
+        </select>
+
+        <label for="division">Division / district (optional)</label>
+        <input type="text" id="division" placeholder="e.g. Jaipur Division">
+
+        <button type="submit" class="btn" id="signupBtn">Create account</button>
+      </form>
+
+      <div class="demo-hint" style="text-align:center;">
+        Already have an account? <a href="/login.html">Sign in</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    if (VX.getToken()) window.location.href = '/dashboard.html';
+
+    const form = document.getElementById('signupForm');
+    const msgBox = document.getElementById('signupMsg');
+    const btn = document.getElementById('signupBtn');
+
+    function showMessage(text, type) {
+      msgBox.innerHTML = `<div class="msg ${type}">${text}</div>`;
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      btn.disabled = true;
+      btn.textContent = 'Creating account…';
+      msgBox.innerHTML = '';
+
+      try {
+        const data = await VX.request('/auth/signup', {
+          method: 'POST',
+          body: {
+            name: document.getElementById('name').value.trim(),
+            email: document.getElementById('email').value.trim(),
+            password: document.getElementById('password').value,
+            role: document.getElementById('role').value,
+            division: document.getElementById('division').value.trim(),
+          },
+        });
+        VX.setSession(data.token, data.user);
+        window.location.href = '/dashboard.html';
+      } catch (err) {
+        showMessage(err.message, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Create account';
+      }
+    });
+  </script>
+</body>
+</html>

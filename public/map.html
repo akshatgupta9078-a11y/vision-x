@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VISION-X — Live Map</title>
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  #map { width:100%; height:70vh; border-radius:6px; border:1px solid var(--line); background:var(--surface); }
+  .leaflet-popup-content-wrapper{ background:var(--surface); color:var(--ink); }
+  .leaflet-popup-tip{ background:var(--surface); }
+  .map-legend{ display:flex; gap:22px; flex-wrap:wrap; margin:14px 0; font-size:0.85rem; color:var(--ink-soft); }
+  .map-legend span{ display:inline-flex; align-items:center; gap:6px; }
+  .dot{ width:11px; height:11px; border-radius:50%; display:inline-block; }
+</style>
+</head>
+<body>
+  <div class="topbar" id="topbar"></div>
+
+  <div class="wrap">
+    <h1>Live GPS map</h1>
+    <p class="sub">Registered institute locations and the real device GPS coordinates captured at the moment each inspection report was submitted.</p>
+
+    <div id="msgBox"></div>
+
+    <div class="map-legend">
+      <span><span class="dot" style="background:#3B82F6"></span> Registered institute</span>
+      <span><span class="dot" style="background:#4ADE80"></span> Report — normal</span>
+      <span><span class="dot" style="background:#F0857A"></span> Report — flagged</span>
+    </div>
+
+    <div class="panel" style="padding:10px;">
+      <div id="map"></div>
+    </div>
+
+    <p class="sub" style="margin-top:14px; font-size:0.82rem;">
+      Report markers use the device GPS captured live in the browser when the field officer submitted that report — not a manually entered address. Institutes without saved coordinates, or reports submitted without location permission, won't appear on the map.
+    </p>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="/js/api.js"></script>
+  <script>
+    VX.requireAuth();
+    VX.renderTopbar('map');
+
+    function showMsg(text, type) {
+      document.getElementById('msgBox').innerHTML = `<div class="msg ${type}">${text}</div>`;
+    }
+
+    const map = L.map('map').setView([23.5, 78.9], 5); // roughly centered on India
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 18,
+      attribution: '&copy; OpenStreetMap contributors',
+    }).addTo(map);
+
+    function coloredIcon(color) {
+      return L.divIcon({
+        className: '',
+        html: `<div style="width:16px;height:16px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 0 4px rgba(0,0,0,0.5);"></div>`,
+        iconSize: [16, 16],
+        iconAnchor: [8, 8],
+      });
+    }
+
+    const instituteIcon = coloredIcon('#3B82F6');
+    const normalIcon = coloredIcon('#4ADE80');
+    const flaggedIcon = coloredIcon('#F0857A');
+
+    async function loadMap() {
+      const bounds = [];
+
+      try {
+        const { institutes } = await VX.request('/institutes');
+        institutes.forEach((i) => {
+          if (i.latitude == null || i.longitude == null) return;
+          const marker = L.marker([i.latitude, i.longitude], { icon: instituteIcon }).addTo(map);
+          marker.bindPopup(`<b>${i.name}</b><br>${i.type} — ${i.district}<br><span style="color:#3B82F6">Registered institute location</span>`);
+          bounds.push([i.latitude, i.longitude]);
+        });
+      } catch (err) {
+        showMsg(err.message, 'error');
+      }
+
+      try {
+        const { reports } = await VX.request('/reports');
+        reports.forEach((r) => {
+          if (r.latitude == null || r.longitude == null) return;
+          const icon = r.anomaly_flag ? flaggedIcon : normalIcon;
+          const marker = L.marker([r.latitude, r.longitude], { icon }).addTo(map);
+          const when = new Date(r.submitted_at + 'Z').toLocaleString();
+          marker.bindPopup(`
+            <b>${r.institute_name}</b><br>
+            Report by ${r.submitted_by_name || '—'}<br>
+            ${when}<br>
+            <span style="color:${r.anomaly_flag ? '#F0857A' : '#4ADE80'}">${r.anomaly_flag ? 'Flagged' : 'Normal'}</span>
+          `);
+          bounds.push([r.latitude, r.longitude]);
+        });
+      } catch (err) {
+        showMsg(err.message, 'error');
+      }
+
+      if (bounds.length > 0) {
+        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 12 });
+      }
+    }
+
+    loadMap();
+  </script>
+</body>
+</html>

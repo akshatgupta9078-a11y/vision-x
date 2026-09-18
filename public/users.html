@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VISION-X — Manage users</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="topbar" id="topbar"></div>
+
+  <div class="wrap">
+    <h1>Manage user accounts</h1>
+    <p class="sub">Create your own real accounts here, and remove the demo accounts once you no longer need them.</p>
+
+    <div id="msgBox"></div>
+
+    <div class="panel" id="addPanel">
+      <h2>Create a new account</h2>
+      <form class="stacked" id="addForm">
+        <label>Full name</label>
+        <input type="text" id="f_name" required>
+        <label>Email</label>
+        <input type="email" id="f_email" required>
+        <label>Password (min 6 characters)</label>
+        <input type="password" id="f_password" minlength="6" required>
+        <label>Role</label>
+        <select id="f_role" required>
+          <option value="" disabled selected>Choose a role</option>
+          <option value="admin">DoSJE Admin — full access</option>
+          <option value="pmu">PMU / Inspection team</option>
+          <option value="ngo">NGO / Institute</option>
+          <option value="authority">State / District Authority</option>
+        </select>
+        <label>Division / district (optional)</label>
+        <input type="text" id="f_division" placeholder="e.g. Jaipur Division">
+        <button type="submit" class="btn" id="addBtn">Create account</button>
+      </form>
+    </div>
+
+    <div class="panel">
+      <h2>All accounts</h2>
+      <table>
+        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Division</th><th>Created</th><th></th></tr></thead>
+        <tbody id="tableBody"><tr><td colspan="6">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    const user = VX.requireAuth();
+    VX.renderTopbar('users');
+
+    if (!user || user.role !== 'admin') {
+      document.querySelector('.wrap').innerHTML = '<div class="msg error">Only DoSJE Admin accounts can manage users.</div>';
+    }
+
+    function showMsg(text, type) {
+      document.getElementById('msgBox').innerHTML = `<div class="msg ${type}">${text}</div>`;
+    }
+
+    async function loadUsers() {
+      try {
+        const data = await VX.request('/auth/users');
+        const tbody = document.getElementById('tableBody');
+        tbody.innerHTML = data.users.map((u) => `
+          <tr>
+            <td>${u.name}</td>
+            <td>${u.email}</td>
+            <td>${u.role}</td>
+            <td>${u.division || '—'}</td>
+            <td>${new Date(u.created_at + 'Z').toLocaleDateString()}</td>
+            <td>${u.id === user.id ? '<span style="color:var(--ink-soft); font-size:0.8rem;">(you)</span>' : `<button class="btn small secondary" onclick="deleteUser(${u.id})">Delete</button>`}</td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        showMsg(err.message, 'error');
+      }
+    }
+
+    async function deleteUser(id) {
+      if (!confirm('Delete this account? This cannot be undone.')) return;
+      try {
+        await VX.request(`/auth/users/${id}`, { method: 'DELETE' });
+        showMsg('Account deleted.', 'success');
+        loadUsers();
+      } catch (err) {
+        showMsg(err.message, 'error');
+      }
+    }
+
+    const addForm = document.getElementById('addForm');
+    if (addForm) {
+      addForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('addBtn');
+        btn.disabled = true;
+        try {
+          await VX.request('/auth/users', {
+            method: 'POST',
+            body: {
+              name: document.getElementById('f_name').value,
+              email: document.getElementById('f_email').value,
+              password: document.getElementById('f_password').value,
+              role: document.getElementById('f_role').value,
+              division: document.getElementById('f_division').value,
+            },
+          });
+          showMsg('Account created. They can now log in with the email and password you set.', 'success');
+          addForm.reset();
+          loadUsers();
+        } catch (err) {
+          showMsg(err.message, 'error');
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    }
+
+    if (user && user.role === 'admin') loadUsers();
+  </script>
+</body>
+</html>

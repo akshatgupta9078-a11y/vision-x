@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VISION-X — Institutes</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="topbar" id="topbar"></div>
+
+  <div class="wrap">
+    <h1>Institutes &amp; NGOs</h1>
+    <p class="sub">Every project, institute or NGO registered under DoSJE schemes.</p>
+
+    <div id="msgBox"></div>
+
+    <div class="panel hidden" id="addPanel">
+      <h2>Add a new institute</h2>
+      <form class="stacked" id="addForm">
+        <label>Name</label>
+        <input type="text" id="f_name" required>
+        <label>Type</label>
+        <input type="text" id="f_type" placeholder="Hostel / Skill Centre / Day Care / NGO" required>
+        <label>District</label>
+        <input type="text" id="f_district" required>
+        <label>Address</label>
+        <input type="text" id="f_address">
+        <label>Latitude</label>
+        <input type="number" step="any" id="f_lat">
+        <label>Longitude</label>
+        <input type="number" step="any" id="f_lng">
+        <label>CCTV Stream URL (optional)</label>
+        <input type="text" id="f_cctv" placeholder="http://<camera-ip>:8080/video">
+        <button type="submit" class="btn" id="addBtn">Add institute</button>
+      </form>
+    </div>
+
+    <div class="panel">
+      <h2>All institutes</h2>
+      <table>
+        <thead><tr><th>Name</th><th>Type</th><th>District</th><th>Location</th><th></th></tr></thead>
+        <tbody id="tableBody"><tr><td colspan="5">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    const user = VX.requireAuth();
+    VX.renderTopbar('institutes');
+
+    if (user && (user.role === 'admin' || user.role === 'authority')) {
+      document.getElementById('addPanel').classList.remove('hidden');
+    }
+
+    function showMsg(text, type) {
+      document.getElementById('msgBox').innerHTML = `<div class="msg ${type}">${text}</div>`;
+    }
+
+    async function loadInstitutes() {
+      try {
+        const data = await VX.request('/institutes');
+        const tbody = document.getElementById('tableBody');
+        if (data.institutes.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5">No institutes yet.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = data.institutes.map((i) => `
+          <tr>
+            <td>${i.name}</td>
+            <td>${i.type}</td>
+            <td>${i.district}</td>
+            <td>${i.latitude && i.longitude ? `${i.latitude.toFixed(3)}, ${i.longitude.toFixed(3)}` : '—'}</td>
+            <td>
+              <a href="/inspections.html">Inspections →</a>
+              ${i.cctv_stream_url ? ` &nbsp;|&nbsp; <a href="/camera.html?instituteId=${i.id}">📷 View camera</a>` : ''}
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        showMsg(err.message, 'error');
+      }
+    }
+
+    const addForm = document.getElementById('addForm');
+    if (addForm) {
+      addForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('addBtn');
+        btn.disabled = true;
+        try {
+          await VX.request('/institutes', {
+            method: 'POST',
+            body: {
+              name: document.getElementById('f_name').value,
+              type: document.getElementById('f_type').value,
+              district: document.getElementById('f_district').value,
+              address: document.getElementById('f_address').value,
+              latitude: document.getElementById('f_lat').value || null,
+              longitude: document.getElementById('f_lng').value || null,
+              cctvStreamUrl: document.getElementById('f_cctv').value || null,
+            },
+          });
+          showMsg('Institute added.', 'success');
+          addForm.reset();
+          loadInstitutes();
+        } catch (err) {
+          showMsg(err.message, 'error');
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    }
+
+    loadInstitutes();
+  </script>
+</body>
+</html>

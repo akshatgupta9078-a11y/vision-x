@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VISION-X — Dashboard</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="topbar" id="topbar"></div>
+
+  <div class="wrap">
+    <h1>Real-time monitoring dashboard</h1>
+    <p class="sub" id="subline">Loading live data…</p>
+
+    <div id="errorBox"></div>
+
+    <div class="cards" id="cards"></div>
+
+    <div class="panel">
+      <h2>Recent inspection reports</h2>
+      <table>
+        <thead>
+          <tr><th>Institute</th><th>Submitted by</th><th>When</th><th>Status</th></tr>
+        </thead>
+        <tbody id="recentBody">
+          <tr><td colspan="4">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    VX.requireAuth();
+    VX.renderTopbar('dashboard');
+
+    async function load() {
+      try {
+        const data = await VX.request('/dashboard/summary');
+        document.getElementById('subline').textContent =
+          `Live as of ${new Date().toLocaleString()} — auto-refreshes every 15s`;
+
+        const cards = document.getElementById('cards');
+        cards.innerHTML = `
+          <div class="card"><div class="num">${data.totalInstitutes}</div><div class="label">Institutes onboarded</div></div>
+          <div class="card"><div class="num">${data.inspections.pending}</div><div class="label">Pending inspections</div></div>
+          <div class="card"><div class="num">${data.inspections.assigned + data.inspections.in_progress}</div><div class="label">Assigned / in progress</div></div>
+          <div class="card ok"><div class="num">${data.inspections.completed}</div><div class="label">Completed inspections</div></div>
+          <div class="card flag"><div class="num">${data.reports.flagged}</div><div class="label">Flagged reports (anomaly)</div></div>
+        `;
+
+        const tbody = document.getElementById('recentBody');
+        if (data.recentReports.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="4">No reports submitted yet.</td></tr>';
+        } else {
+          tbody.innerHTML = data.recentReports.map((r) => `
+            <tr>
+              <td>${r.institute_name}</td>
+              <td>${r.submitted_by_name || '—'}</td>
+              <td>${new Date(r.submitted_at + 'Z').toLocaleString()}</td>
+              <td>${r.anomaly_flag ? '<span class="status missed">Flagged</span>' : '<span class="status completed">Normal</span>'}</td>
+            </tr>
+          `).join('');
+        }
+      } catch (err) {
+        document.getElementById('errorBox').innerHTML = `<div class="msg error">${err.message}</div>`;
+      }
+    }
+
+    load();
+    setInterval(load, 15000);
+  </script>
+</body>
+</html>

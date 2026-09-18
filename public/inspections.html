@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VISION-X — Inspections</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="topbar" id="topbar"></div>
+
+  <div class="wrap">
+    <h1>Inspections</h1>
+    <p class="sub">Admins randomly assign pending inspections; PMU officers see only what's assigned to them.</p>
+
+    <div id="msgBox"></div>
+
+    <div class="actions-row" id="adminActions"></div>
+
+    <div class="panel">
+      <table>
+        <thead><tr><th>Institute</th><th>District</th><th>Assigned to</th><th>Status</th><th>Due</th><th></th></tr></thead>
+        <tbody id="tableBody"><tr><td colspan="6">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    const user = VX.requireAuth();
+    VX.renderTopbar('inspections');
+
+    if (user && (user.role === 'admin' || user.role === 'authority')) {
+      document.getElementById('adminActions').innerHTML = `
+        <button class="btn" id="assignBtn">Randomly assign pending inspections</button>
+      `;
+      document.getElementById('assignBtn').addEventListener('click', async () => {
+        const btn = document.getElementById('assignBtn');
+        btn.disabled = true;
+        btn.textContent = 'Assigning…';
+        try {
+          const result = await VX.request('/inspections/assign-random', { method: 'POST' });
+          showMsg(result.message, 'success');
+          loadInspections();
+        } catch (err) {
+          showMsg(err.message, 'error');
+        } finally {
+          btn.disabled = false;
+          btn.textContent = 'Randomly assign pending inspections';
+        }
+      });
+    }
+
+    function showMsg(text, type) {
+      document.getElementById('msgBox').innerHTML = `<div class="msg ${type}">${text}</div>`;
+    }
+
+    async function updateStatus(id, status) {
+      try {
+        await VX.request(`/inspections/${id}/status`, { method: 'PATCH', body: { status } });
+        loadInspections();
+      } catch (err) {
+        showMsg(err.message, 'error');
+      }
+    }
+
+    async function loadInspections() {
+      try {
+        const data = await VX.request('/inspections');
+        const tbody = document.getElementById('tableBody');
+        if (data.inspections.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6">No inspections found.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = data.inspections.map((i) => {
+          const mine = user.role === 'pmu' && i.assigned_to === user.id;
+          const canStart = mine && (i.status === 'assigned');
+          const canReport = mine && (i.status === 'in_progress' || i.status === 'assigned');
+          return `
+            <tr>
+              <td>${i.institute_name}</td>
+              <td>${i.district}</td>
+              <td>${i.assignee_name || '—'}</td>
+              <td><span class="status ${i.status}">${i.status.replace('_',' ')}</span></td>
+              <td>${i.due_date || '—'}</td>
+              <td>
+                ${canStart ? `<button class="btn small" onclick="updateStatus(${i.id}, 'in_progress')">Start</button>` : ''}
+                ${canReport ? ` <a class="btn small secondary" href="/report-submit.html?inspectionId=${i.id}">Submit report</a>` : ''}
+              </td>
+            </tr>
+          `;
+        }).join('');
+      } catch (err) {
+        showMsg(err.message, 'error');
+      }
+    }
+
+    loadInspections();
+  </script>
+</body>
+</html>

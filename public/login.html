@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VISION-X — Sign in</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="login-shell">
+    <div class="login-box">
+      <h1>VISION-X</h1>
+      <p class="sub">Sign in to the DoSJE monitoring platform</p>
+
+      <div id="loginMsg"></div>
+
+      <form class="stacked" id="loginForm">
+        <label for="email">Email</label>
+        <input type="email" id="email" required placeholder="you@dosje.test">
+        <label for="password">Password</label>
+        <input type="password" id="password" required placeholder="••••••••">
+        <button type="submit" class="btn" id="loginBtn">Sign in</button>
+      </form>
+
+      <div class="demo-hint" style="text-align:center;">
+        New here? <a href="/signup.html">Create an account</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    // If already logged in, skip straight to the dashboard.
+    if (VX.getToken()) window.location.href = '/dashboard.html';
+
+    const form = document.getElementById('loginForm');
+    const msgBox = document.getElementById('loginMsg');
+    const btn = document.getElementById('loginBtn');
+
+    function showMessage(text, type) {
+      msgBox.innerHTML = `<div class="msg ${type}">${text}</div>`;
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      btn.disabled = true;
+      btn.textContent = 'Signing in…';
+      msgBox.innerHTML = '';
+
+      try {
+        const email = document.getElementById('email').value.trim();
+        const password = document.getElementById('password').value;
+        const data = await VX.request('/auth/login', { method: 'POST', body: { email, password } });
+        VX.setSession(data.token, data.user);
+        window.location.href = '/dashboard.html';
+      } catch (err) {
+        showMessage(err.message, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Sign in';
+      }
+    });
+  </script>
+</body>
+</html>

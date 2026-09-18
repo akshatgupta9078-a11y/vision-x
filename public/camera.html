@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VISION-X — Live Camera</title>
+<link rel="stylesheet" href="/css/style.css">
+<style>
+  .feed-wrap{
+    background:#000; border-radius:6px; overflow:hidden; border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center; min-height:360px;
+  }
+  .feed-wrap img, .feed-wrap video{ width:100%; display:block; }
+  .feed-fallback{ color:var(--ink-soft); padding:40px; text-align:center; font-size:0.9rem; }
+  .live-badge{
+    display:inline-flex; align-items:center; gap:6px; background:#F0857A; color:#1a0a08;
+    font-weight:700; font-size:0.75rem; padding:3px 10px; border-radius:20px; margin-bottom:10px;
+  }
+  .live-badge .d{ width:7px; height:7px; border-radius:50%; background:#1a0a08; animation:pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+</style>
+</head>
+<body>
+  <div class="topbar" id="topbar"></div>
+
+  <div class="wrap">
+    <h1 id="pageTitle">Live camera feed</h1>
+    <p class="sub" id="pageSub">Loading institute details…</p>
+
+    <div id="msgBox"></div>
+
+    <div class="panel">
+      <span class="live-badge"><span class="d"></span>LIVE</span>
+      <div class="feed-wrap" id="feedWrap">
+        <div class="feed-fallback">Loading camera…</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>How this works</h2>
+      <p style="font-size:0.85rem; color:var(--ink-soft); line-height:1.6;">
+        This viewer loads whatever URL is saved as the institute's CCTV stream — it does not host or record video itself.
+        For a live phone-as-camera demo: install a free IP-camera app (e.g. <b>"IP Webcam"</b> on Android, or
+        <b>"EpocCam" / "IP Camera Lite"</b> on iPhone), start streaming, and paste the app's given URL
+        (usually like <code>http://&lt;phone-ip&gt;:8080/video</code>) into the institute's CCTV Stream URL field.
+        The phone and the device viewing this page must be reachable from each other — same Wi-Fi network works out of
+        the box; to let this live website reach a phone anywhere, tunnel the phone's stream through a service like
+        <b>ngrok</b> and use the public URL it gives you instead.
+      </p>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    VX.requireAuth();
+    VX.renderTopbar('institutes');
+
+    function showMsg(text, type) {
+      document.getElementById('msgBox').innerHTML = `<div class="msg ${type}">${text}</div>`;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const instituteId = params.get('instituteId');
+
+    async function loadCamera() {
+      if (!instituteId) {
+        showMsg('No institute specified.', 'error');
+        return;
+      }
+      try {
+        const { institute } = await VX.request(`/institutes/${instituteId}`);
+        document.getElementById('pageTitle').textContent = `Live camera — ${institute.name}`;
+        document.getElementById('pageSub').textContent = `${institute.type} · ${institute.district}`;
+
+        const feedWrap = document.getElementById('feedWrap');
+        if (!institute.cctv_stream_url) {
+          feedWrap.innerHTML = '<div class="feed-fallback">No CCTV stream URL saved for this institute yet. Add one from the Institutes page.</div>';
+          return;
+        }
+
+        const url = institute.cctv_stream_url;
+        if (/\.m3u8($|\?)/i.test(url) || /\.mp4($|\?)/i.test(url)) {
+          feedWrap.innerHTML = `<video src="${url}" controls autoplay muted playsinline></video>`;
+        } else {
+          // Treat as an MJPEG / still-refreshing HTTP stream (e.g. IP Webcam apps)
+          const img = document.createElement('img');
+          img.src = url;
+          img.alt = 'Live camera feed';
+          img.onerror = () => {
+            feedWrap.innerHTML = `<div class="feed-fallback">Could not load the stream at:<br><code>${url}</code><br><br>Check that the camera is on, the URL is correct, and this device can reach it on the network.</div>`;
+          };
+          feedWrap.innerHTML = '';
+          feedWrap.appendChild(img);
+        }
+      } catch (err) {
+        showMsg(err.message, 'error');
+      }
+    }
+
+    loadCamera();
+  </script>
+</body>
+</html>

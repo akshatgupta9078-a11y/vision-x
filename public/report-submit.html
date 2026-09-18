@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VISION-X — Submit inspection report</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="topbar" id="topbar"></div>
+
+  <div class="wrap">
+    <h1>Submit inspection report</h1>
+    <p class="sub">Geo-tagged, timestamped evidence capture — this is the mobile inspection module.</p>
+
+    <div id="msgBox"></div>
+
+    <div class="panel">
+      <form class="stacked" id="reportForm">
+        <label>Inspection</label>
+        <select id="inspectionSelect" required></select>
+
+        <label>Staff present / expected</label>
+        <div style="display:flex; gap:8px;">
+          <input type="number" min="0" id="staffPresent" placeholder="Present" required style="flex:1">
+          <input type="number" min="0" id="staffExpected" placeholder="Expected" required style="flex:1">
+        </div>
+
+        <label>Beneficiaries present / expected</label>
+        <div style="display:flex; gap:8px;">
+          <input type="number" min="0" id="benPresent" placeholder="Present" required style="flex:1">
+          <input type="number" min="0" id="benExpected" placeholder="Expected" required style="flex:1">
+        </div>
+
+        <label>Notes</label>
+        <textarea id="notes" rows="3" placeholder="Observations from the visit"></textarea>
+
+        <label>Evidence photo</label>
+        <input type="file" id="photo" accept="image/png,image/jpeg,image/webp" required>
+
+        <label>Location</label>
+        <div id="locationStatus" class="msg" style="background:#EAE4D5;color:#2A3F5C;">Requesting device location…</div>
+        <input type="hidden" id="latitude">
+        <input type="hidden" id="longitude">
+
+        <button type="submit" class="btn" id="submitBtn" disabled>Submit report</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    const user = VX.requireAuth();
+    VX.renderTopbar('report');
+
+    function showMsg(text, type) {
+      document.getElementById('msgBox').innerHTML = `<div class="msg ${type}">${text}</div>`;
+    }
+
+    // Populate the inspection dropdown with this officer's assigned work.
+    async function loadInspections() {
+      const select = document.getElementById('inspectionSelect');
+      try {
+        const data = await VX.request('/inspections');
+        const eligible = data.inspections.filter((i) => i.status === 'assigned' || i.status === 'in_progress');
+        if (eligible.length === 0) {
+          select.innerHTML = '<option value="">No open inspections assigned to you</option>';
+          return;
+        }
+        select.innerHTML = eligible.map((i) =>
+          `<option value="${i.id}">${i.institute_name} — ${i.district} (${i.status})</option>`
+        ).join('');
+
+        const params = new URLSearchParams(window.location.search);
+        const preselect = params.get('inspectionId');
+        if (preselect) select.value = preselect;
+      } catch (err) {
+        showMsg(err.message, 'error');
+      }
+    }
+
+    // Capture the device's real GPS location via the browser Geolocation API.
+    function captureLocation() {
+      const statusEl = document.getElementById('locationStatus');
+      if (!navigator.geolocation) {
+        statusEl.textContent = 'Geolocation is not supported on this device — submit will proceed without coordinates.';
+        document.getElementById('submitBtn').disabled = false;
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          document.getElementById('latitude').value = pos.coords.latitude;
+          document.getElementById('longitude').value = pos.coords.longitude;
+          statusEl.textContent = `Location captured: ${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`;
+          statusEl.style.background = '#DCF0E2';
+          document.getElementById('submitBtn').disabled = false;
+        },
+        (err) => {
+          statusEl.textContent = `Could not get location (${err.message}). You can still submit without it.`;
+          statusEl.style.background = '#F5DCDA';
+          document.getElementById('submitBtn').disabled = false;
+        }
+      );
+    }
+
+    document.getElementById('reportForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('submitBtn');
+      const inspectionId = document.getElementById('inspectionSelect').value;
+      if (!inspectionId) {
+        showMsg('Select an inspection first.', 'error');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Submitting…';
+
+      const fd = new FormData();
+      fd.append('inspectionId', inspectionId);
+      fd.append('staffPresent', document.getElementById('staffPresent').value);
+      fd.append('staffExpected', document.getElementById('staffExpected').value);
+      fd.append('beneficiariesPresent', document.getElementById('benPresent').value);
+      fd.append('beneficiariesExpected', document.getElementById('benExpected').value);
+      fd.append('notes', document.getElementById('notes').value);
+      fd.append('latitude', document.getElementById('latitude').value);
+      fd.append('longitude', document.getElementById('longitude').value);
+      const photoFile = document.getElementById('photo').files[0];
+      if (photoFile) fd.append('photo', photoFile);
+
+      try {
+        const result = await VX.request('/reports', { method: 'POST', body: fd, isFormData: true });
+        if (result.anomaly && result.anomaly.flagged) {
+          showMsg(`Report submitted — flagged for review: ${result.anomaly.reason}`, 'error');
+        } else {
+          showMsg('Report submitted successfully. Inspection marked complete.', 'success');
+        }
+        document.getElementById('reportForm').reset();
+        loadInspections();
+      } catch (err) {
+        showMsg(err.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Submit report';
+      }
+    });
+
+    loadInspections();
+    captureLocation();
+  </script>
+</body>
+</html>
