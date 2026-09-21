@@ -129,11 +129,21 @@
 
       try {
         const result = await VX.request('/reports', { method: 'POST', body: fd, isFormData: true });
+
+        const messages = [];
         if (result.anomaly && result.anomaly.flagged) {
-          showMsg(`Report submitted — flagged for review: ${result.anomaly.reason}`, 'error');
+          messages.push(`Flagged for review: ${result.anomaly.reason}`);
         } else {
-          showMsg('Report submitted successfully. Inspection marked complete.', 'success');
+          messages.push('Report submitted successfully. Inspection marked complete.');
         }
+        if (result.authenticity && result.authenticity.status === 'suspicious') {
+          messages.push(`Photo check: ${result.authenticity.reason}`);
+        } else if (result.authenticity && result.authenticity.status === 'verified') {
+          messages.push(`Photo check: ✓ ${result.authenticity.reason}`);
+        }
+
+        const overallType = (result.anomaly?.flagged || result.authenticity?.status === 'suspicious') ? 'error' : 'success';
+        showMsg(messages.join('<br>'), overallType);
         document.getElementById('reportForm').reset();
         loadInspections();
       } catch (err) {

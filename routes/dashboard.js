@@ -21,6 +21,7 @@ router.get('/summary', authenticate, (req, res) => {
 
   const recentReports = db.prepare(`
     SELECT reports.id, reports.submitted_at, reports.anomaly_flag, reports.anomaly_reason,
+           reports.photo_authenticity, reports.photo_authenticity_reason,
            institutes.name AS institute_name, users.name AS submitted_by_name
     FROM reports
     JOIN inspections ON inspections.id = reports.inspection_id

@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VISION-X — 3D Map</title>
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cesium/1.118.1/Widgets/widgets.css">
+<style>
+  #mapShell { position:relative; }
+  #cesiumContainer { width:100%; height:72vh; border-radius:6px; border:1px solid var(--line); overflow:hidden; background:#000; }
+  .map-legend{ display:flex; gap:22px; flex-wrap:wrap; margin:14px 0; font-size:0.85rem; color:var(--ink-soft); }
+  .map-legend span{ display:inline-flex; align-items:center; gap:6px; }
+  .dot{ width:11px; height:11px; border-radius:50%; display:inline-block; }
+  .cesium-viewer-bottom { display:none !important; }
+  .stats-overlay{
+    position:absolute; top:14px; left:14px; z-index:20;
+    background:rgba(10,15,25,0.72); backdrop-filter:blur(4px);
+    border:1px solid rgba(255,255,255,0.12); border-radius:8px;
+    padding:12px 16px; display:flex; gap:22px; font-family:var(--sans);
+    box-shadow:0 4px 20px rgba(0,0,0,0.35);
+  }
+  .stats-overlay .stat{ text-align:center; }
+  .stats-overlay .stat .num{ font-size:1.3rem; font-weight:700; color:#fff; line-height:1.1; }
+  .stats-overlay .stat .lbl{ font-size:0.68rem; color:#9fb0c9; text-transform:uppercase; letter-spacing:0.03em; }
+  .live-chip-3d{
+    position:absolute; top:14px; right:14px; z-index:20;
+    display:inline-flex; align-items:center; gap:6px;
+    background:rgba(10,15,25,0.72); backdrop-filter:blur(4px);
+    border:1px solid rgba(255,255,255,0.12); color:#fff;
+    font-size:0.72rem; font-weight:600; padding:6px 12px; border-radius:20px;
+  }
+  .live-chip-3d .d{ width:6px; height:6px; border-radius:50%; background:#4ADE80; animation:pulse3d 1.6s ease-in-out infinite; }
+  @keyframes pulse3d{ 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+</style>
+</head>
+<body>
+  <div class="topbar" id="topbar"></div>
+
+  <div class="wrap">
+    <h1>Live 3D globe map</h1>
+    <p class="sub">Institutes and inspection report locations plotted on a real satellite-imagery 3D globe, using actual captured GPS coordinates.</p>
+
+    <div id="msgBox"></div>
+
+    <div class="map-legend">
+      <span><span class="dot" style="background:#3B82F6"></span> Registered institute</span>
+      <span><span class="dot" style="background:#4ADE80"></span> Report — normal</span>
+      <span><span class="dot" style="background:#F0857A"></span> Report — flagged</span>
+    </div>
+
+    <div class="panel" style="padding:10px;">
+      <div id="mapShell">
+        <div class="stats-overlay" id="statsOverlay">
+          <div class="stat"><div class="num" id="statInstitutes">—</div><div class="lbl">Institutes</div></div>
+          <div class="stat"><div class="num" id="statNormal">—</div><div class="lbl">Normal</div></div>
+          <div class="stat"><div class="num" id="statFlagged">—</div><div class="lbl">Flagged</div></div>
+        </div>
+        <div class="live-chip-3d"><span class="d"></span>LIVE</div>
+        <div id="cesiumContainer"></div>
+      </div>
+    </div>
+
+    <p class="sub" style="margin-top:14px; font-size:0.82rem;">
+      Real Esri satellite imagery, day/night lighting based on the sun's actual position. Drag to rotate, scroll to zoom, right-click-drag to tilt. Click a point for details. No API key required.
+    </p>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cesium/1.118.1/Cesium.js"></script>
+  <script src="/js/api.js"></script>
+  <script>
+    VX.requireAuth();
+    VX.renderTopbar('map3d');
+
+    function showMsg(text, type) {
+      document.getElementById('msgBox').innerHTML = `<div class="msg ${type}">${text}</div>`;
+    }
+
+    // Real satellite imagery from Esri (free, no API key / ion account needed).
+    const viewer = new Cesium.Viewer('cesiumContainer', {
+      imageryProvider: new Cesium.ArcGisMapServerImageryProvider({
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer',
+      }),
+      baseLayerPicker: false,
+      geocoder: false,
+      homeButton: true,
+      sceneModePicker: true,
+      navigationHelpButton: false,
+      animation: false,
+      timeline: false,
+      fullscreenButton: true,
+      infoBox: true,
+      selectionIndicator: true,
+      skyAtmosphere: new Cesium.SkyAtmosphere(),
+      creditContainer: document.createElement('div'),
+    });
+
+    // Realistic day/night shading based on the sun's real position, plus a
+    // slightly brighter fill light so night-side markers stay visible.
+    viewer.scene.globe.enableLighting = true;
+    viewer.scene.globe.dynamicAtmosphereLighting = true;
+    viewer.scene.globe.atmosphereLightIntensity = 8.0;
+    viewer.scene.skyAtmosphere.hueShift = -0.02;
+    viewer.scene.fog.density = 0.0001;
+    viewer.scene.highDynamicRange = true;
+
+    function addPulsingPoint(lat, lon, color, title, description) {
+      const position = Cesium.Cartesian3.fromDegrees(lon, lat);
+      const cssColor = Cesium.Color.fromCssColorString(color);
+
+      // Outer glow ring
+      viewer.entities.add({
+        position,
+        ellipse: {
+          semiMinorAxis: 9000,
+          semiMajorAxis: 9000,
+          height: 0,
+          material: cssColor.withAlpha(0.25),
+          outline: false,
+        },
+      });
+
+      // Solid core marker
+      viewer.entities.add({
+        position,
+        point: {
+          pixelSize: 12,
+          color: cssColor,
+          outlineColor: Cesium.Color.WHITE,
+          outlineWidth: 2,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        label: {
+          text: title,
+          font: '600 13px sans-serif',
+          fillColor: Cesium.Color.WHITE,
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          outlineColor: Cesium.Color.BLACK,
+          outlineWidth: 3,
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          pixelOffset: new Cesium.Cartesian2(0, -14),
+          showBackground: true,
+          backgroundColor: Cesium.Color.fromCssColorString('#0b0f19').withAlpha(0.75),
+          backgroundPadding: new Cesium.Cartesian2(6, 4),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          show: false,
+        },
+        description,
+      });
+    }
+
+    // Highlight a point's label on hover/select for a cleaner default view.
+    const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+    handler.setInputAction((movement) => {
+      const picked = viewer.scene.pick(movement.endPosition);
+      viewer.entities.values.forEach((e) => { if (e.label) e.label.show = false; });
+      if (Cesium.defined(picked) && picked.id && picked.id.label) {
+        picked.id.label.show = true;
+      }
+    }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+
+    async function loadMap() {
+      const positions = [];
+      let instituteCount = 0, normalCount = 0, flaggedCount = 0;
+
+      try {
+        const { institutes } = await VX.request('/institutes');
+        institutes.forEach((i) => {
+          if (i.latitude == null || i.longitude == null) return;
+          addPulsingPoint(
+            i.latitude, i.longitude, '#3B82F6', i.name,
+            `<b>${i.name}</b><br>${i.type} — ${i.district}<br>Registered institute location`
+          );
+          positions.push(Cesium.Cartesian3.fromDegrees(i.longitude, i.latitude));
+          instituteCount++;
+        });
+      } catch (err) {
+        showMsg(err.message, 'error');
+      }
+
+      try {
+        const { reports } = await VX.request('/reports');
+        reports.forEach((r) => {
+          if (r.latitude == null || r.longitude == null) return;
+          const color = r.anomaly_flag ? '#F0857A' : '#4ADE80';
+          const when = new Date(r.submitted_at + 'Z').toLocaleString();
+          addPulsingPoint(
+            r.latitude, r.longitude, color, r.institute_name,
+            `<b>${r.institute_name}</b><br>Report by ${r.submitted_by_name || '—'}<br>${when}<br>${r.anomaly_flag ? 'Flagged' : 'Normal'}`
+          );
+          positions.push(Cesium.Cartesian3.fromDegrees(r.longitude, r.latitude));
+          r.anomaly_flag ? flaggedCount++ : normalCount++;
+        });
+      } catch (err) {
+        showMsg(err.message, 'error');
+      }
+
+      document.getElementById('statInstitutes').textContent = instituteCount;
+      document.getElementById('statNormal').textContent = normalCount;
+      document.getElementById('statFlagged').textContent = flaggedCount;
+
+      // Cinematic opening: start from deep space, then fly down to the data.
+      viewer.camera.setView({
+        destination: Cesium.Cartesian3.fromDegrees(78.9, 23.5, 20000000),
+      });
+
+      const target = positions.length > 0
+        ? Cesium.BoundingSphere.fromPoints(positions).center
+        : Cesium.Cartesian3.fromDegrees(78.9, 23.5);
+
+      setTimeout(() => {
+        if (positions.length > 0) {
+          viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(positions), {
+            duration: 2.5,
+            offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-45), 0),
+          });
+        } else {
+          viewer.camera.flyTo({
+            destination: Cesium.Cartesian3.fromDegrees(78.9, 23.5, 4000000),
+            duration: 2.5,
+          });
+        }
+      }, 400);
+    }
+
+    loadMap();
+  </script>
+</body>
+</html>
+

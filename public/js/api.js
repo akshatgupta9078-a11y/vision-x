@@ -71,6 +71,7 @@ const VX = {
         <a href="/institutes.html" ${activePage === 'institutes' ? 'style="color:#3B82F6"' : ''}>Institutes</a>
         <a href="/inspections.html" ${activePage === 'inspections' ? 'style="color:#3B82F6"' : ''}>Inspections</a>
         <a href="/map.html" ${activePage === 'map' ? 'style="color:#3B82F6"' : ''}>Map</a>
+        <a href="/map3d.html" ${activePage === 'map3d' ? 'style="color:#3B82F6"' : ''}>3D Map</a>
         <a href="/report-submit.html" ${activePage === 'report' ? 'style="color:#3B82F6"' : ''}>Submit report</a>
         ${usersLink}
       </nav>

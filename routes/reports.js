@@ -3,6 +3,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
+const exifr = require('exifr');
 const db = require('../db');
 const { authenticate, authorize } = require('../middleware/auth');
 
@@ -49,11 +50,59 @@ function detectAnomaly({ staffPresent, staffExpected, beneficiariesPresent, bene
   return { flagged: reasons.length > 0, reason: reasons.join(' ') || null };
 }
 
+// Checks the photo's embedded EXIF metadata as a heuristic signal of whether
+// it was actually taken by a phone camera at submission time, versus being a
+// screenshot, a downloaded/reused image, or an AI-generated image (which
+// typically carry no camera metadata at all).
+//
+// IMPORTANT — this is a metadata heuristic, not a trained AI/ML deepfake
+// detector. It cannot prove an image is real, and a determined person could
+// strip or fake EXIF data. It catches the common, low-effort cases (plain
+// screenshots, images saved from the web, most AI image generators) and is
+// presented to the user as exactly that — a supporting signal, not a verdict.
+async function checkPhotoAuthenticity(filePath) {
+  try {
+    const exif = await exifr.parse(filePath, { pick: ['Make', 'Model', 'DateTimeOriginal', 'Software'] });
+
+    if (exif && exif.Software && /midjourney|dall-e|dalle|stable diffusion|stablediffusion|firefly|imagen/i.test(exif.Software)) {
+      return {
+        status: 'suspicious',
+        reason: `Image metadata references image-generation software ("${exif.Software}").`,
+      };
+    }
+
+    if (!exif || (!exif.Make && !exif.Model)) {
+      return {
+        status: 'suspicious',
+        reason: 'No camera metadata (make/model) found in this image. It may be a screenshot, a downloaded image, or AI-generated rather than a photo taken directly on-site.',
+      };
+    }
+
+    if (exif.DateTimeOriginal) {
+      const takenAt = new Date(exif.DateTimeOriginal);
+      const ageMs = Date.now() - takenAt.getTime();
+      const ageDays = ageMs / (1000 * 60 * 60 * 24);
+      if (ageDays > 7) {
+        return {
+          status: 'suspicious',
+          reason: `Photo's own timestamp shows it was taken ${Math.round(ageDays)} day(s) before this report was submitted, not on-site just now.`,
+        };
+      }
+    }
+
+    const cameraLabel = `${exif.Make || ''} ${exif.Model || ''}`.trim();
+    return { status: 'verified', reason: cameraLabel ? `Camera metadata found (${cameraLabel}).` : 'Camera metadata found.' };
+  } catch (err) {
+    // Corrupt/unreadable EXIF is itself a mild signal, but not conclusive.
+    return { status: 'unknown', reason: 'Could not read image metadata.' };
+  }
+}
+
 // POST /api/reports — submit an inspection report (multipart/form-data)
 // Fields: inspectionId, notes, staffPresent, staffExpected,
 //         beneficiariesPresent, beneficiariesExpected, latitude, longitude
 // File field name: photo
-router.post('/', authenticate, authorize('pmu', 'admin'), upload.single('photo'), (req, res) => {
+router.post('/', authenticate, authorize('pmu', 'admin'), upload.single('photo'), async (req, res) => {
   const {
     inspectionId, notes,
     staffPresent, staffExpected,
@@ -85,15 +134,22 @@ router.post('/', authenticate, authorize('pmu', 'admin'), upload.single('photo')
 
   const photoPath = req.file ? `/uploads/${req.file.filename}` : null;
 
+  let authenticity = { status: 'unknown', reason: 'No photo was attached.' };
+  if (req.file) {
+    authenticity = await checkPhotoAuthenticity(req.file.path);
+  }
+
   const info = db.prepare(
     `INSERT INTO reports
       (inspection_id, submitted_by, notes, staff_present, staff_expected,
        beneficiaries_present, beneficiaries_expected, photo_path,
+       photo_authenticity, photo_authenticity_reason,
        latitude, longitude, anomaly_flag, anomaly_reason)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     inspectionId, req.user.id, notes || null, sPresent, sExpected,
     bPresent, bExpected, photoPath,
+    authenticity.status, authenticity.reason,
     latitude ?? null, longitude ?? null,
     anomaly.flagged ? 1 : 0, anomaly.reason
   );
@@ -102,7 +158,7 @@ router.post('/', authenticate, authorize('pmu', 'admin'), upload.single('photo')
   db.prepare(`UPDATE inspections SET status = 'completed' WHERE id = ?`).run(inspectionId);
 
   const report = db.prepare('SELECT * FROM reports WHERE id = ?').get(info.lastInsertRowid);
-  res.status(201).json({ report, anomaly });
+  res.status(201).json({ report, anomaly, authenticity });
 });
 
 // GET /api/reports — list reports (admin/authority see all; PMU see their own)

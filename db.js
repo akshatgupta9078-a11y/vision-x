@@ -57,6 +57,8 @@ CREATE TABLE IF NOT EXISTS reports (
   beneficiaries_present INTEGER,
   beneficiaries_expected INTEGER,
   photo_path TEXT,
+  photo_authenticity TEXT DEFAULT 'unknown' CHECK (photo_authenticity IN ('verified','suspicious','unknown')),
+  photo_authenticity_reason TEXT,
   latitude REAL,
   longitude REAL,
   anomaly_flag INTEGER NOT NULL DEFAULT 0,

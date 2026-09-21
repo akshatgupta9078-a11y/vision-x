@@ -22,6 +22,7 @@ This is a **real, runnable application** — not a mockup. It uses:
 | Random inspection assignment | ✅ Fully working (real shuffle algorithm) |
 | Mobile report submission (photo + GPS + notes) | ✅ Fully working (uses your browser's real GPS) |
 | Anomaly flagging | ✅ Fully working (simple rule-based check on attendance ratios) |
+| Photo authenticity check | ✅ Working, but **metadata-based, not a trained AI model** — see note below |
 | Real-time dashboard | ✅ Fully working (polls the database every 15s) |
 | Access-request form endpoint | ✅ Fully working (`POST /api/auth/access-requests`) |
 | Live CCTV feed integration | ⛔ Placeholder only — needs a real camera/RTSP provider |
@@ -82,6 +83,26 @@ For auto-restart during development:
 ```bash
 npm run dev
 ```
+
+## About the photo authenticity check (be honest about this in demos/judging)
+
+When a report photo is uploaded, `routes/reports.js` reads the image's **EXIF
+metadata** (the technical info most cameras embed in a photo) and flags it as
+`suspicious` if:
+- there's no camera make/model recorded (common for screenshots, images
+  downloaded from the web, and most AI image generators), or
+- the metadata names known image-generation software (Midjourney, DALL-E,
+  Stable Diffusion, etc.), or
+- the photo's own timestamp is more than 7 days old — i.e. it wasn't taken
+  around the time of this inspection.
+
+**This is a real, working check — not a placeholder.** But be precise about
+what it is if asked: it's a **metadata heuristic**, not a trained computer-vision
+AI model that looks at pixels to detect deepfakes. It catches the common,
+low-effort cases well, but a determined person could strip or forge EXIF data
+to get past it. A true AI-based image-authenticity classifier (looking at the
+actual pixel content) would need a trained model and is listed under
+"Next steps" below.
 
 ## Creating your own real accounts (not just the demo ones)
 
