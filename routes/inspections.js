@@ -85,6 +85,51 @@ router.post('/assign-random', authenticate, authorize('admin', 'authority'), (re
   res.json({ message: `${assigned.length} inspection(s) randomly assigned.`, assigned });
 });
 
+// PUT /api/inspections/:id — admin-only: edit due date and/or manually
+// reassign the officer. This is separate from the random-assign engine —
+// it's an explicit admin override, so both actions are always available
+// as a matched pair rather than as silent side effects of each other.
+router.put('/:id', authenticate, authorize('admin'), (req, res) => {
+  const { dueDate, assignedTo } = req.body || {};
+
+  const inspection = db.prepare('SELECT * FROM inspections WHERE id = ?').get(req.params.id);
+  if (!inspection) return res.status(404).json({ error: 'Inspection not found.' });
+
+  let newAssignedTo = inspection.assigned_to;
+  let newStatus = inspection.status;
+
+  if (assignedTo !== undefined) {
+    if (assignedTo === null || assignedTo === '') {
+      newAssignedTo = null;
+      newStatus = 'pending';
+    } else {
+      const officer = db.prepare(`SELECT id FROM users WHERE id = ? AND role = 'pmu'`).get(assignedTo);
+      if (!officer) return res.status(400).json({ error: 'assignedTo must be an existing PMU user.' });
+      newAssignedTo = assignedTo;
+      // Manually assigning a pending/unassigned inspection moves it to 'assigned'.
+      if (inspection.status === 'pending') newStatus = 'assigned';
+    }
+  }
+
+  const newDueDate = dueDate !== undefined ? dueDate : inspection.due_date;
+
+  db.prepare(
+    `UPDATE inspections SET due_date = ?, assigned_to = ?, status = ?,
+       assigned_at = CASE WHEN ? IS NOT NULL THEN datetime('now') ELSE assigned_at END
+     WHERE id = ?`
+  ).run(newDueDate, newAssignedTo, newStatus, newAssignedTo, req.params.id);
+
+  const updated = db.prepare('SELECT * FROM inspections WHERE id = ?').get(req.params.id);
+  res.json({ inspection: updated });
+});
+
+// DELETE /api/inspections/:id — admin-only: remove an inspection entirely.
+router.delete('/:id', authenticate, authorize('admin'), (req, res) => {
+  const info = db.prepare('DELETE FROM inspections WHERE id = ?').run(req.params.id);
+  if (info.changes === 0) return res.status(404).json({ error: 'Inspection not found.' });
+  res.json({ message: 'Inspection deleted.' });
+});
+
 // PATCH /api/inspections/:id/status — update status (e.g. in_progress, missed)
 router.patch('/:id/status', authenticate, (req, res) => {
   const { status } = req.body || {};

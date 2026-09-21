@@ -25,6 +25,27 @@
     </div>
   </div>
 
+  <!-- Admin-only edit panel: due date + manual reassignment -->
+  <div id="editOverlay" class="hidden" style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:50;">
+    <div class="panel" style="width:100%; max-width:420px; margin:0;">
+      <h2>Edit inspection</h2>
+      <div id="editMsg"></div>
+      <form class="stacked" id="editForm">
+        <input type="hidden" id="edit_id">
+        <label>Due date</label>
+        <input type="date" id="edit_due">
+        <label>Assigned PMU officer</label>
+        <select id="edit_officer">
+          <option value="">— Unassigned (back to pending) —</option>
+        </select>
+        <div style="display:flex; gap:10px; margin-top:6px;">
+          <button type="submit" class="btn" id="editSaveBtn">Save changes</button>
+          <button type="button" class="btn secondary" id="editCancelBtn">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script src="/js/api.js"></script>
   <script>
     const user = VX.requireAuth();
@@ -64,6 +85,63 @@
       }
     }
 
+    // ---- Admin-only: edit (due date / manual reassignment) and delete ----
+    let pmuOfficers = [];
+
+    async function loadPmuOfficers() {
+      if (!user || user.role !== 'admin') return;
+      try {
+        const { users } = await VX.request('/auth/users');
+        pmuOfficers = users.filter((u) => u.role === 'pmu');
+      } catch (err) {
+        // Non-fatal: the edit modal will just show no officer options.
+      }
+    }
+
+    function openEditModal(inspection) {
+      document.getElementById('edit_id').value = inspection.id;
+      document.getElementById('edit_due').value = inspection.due_date || '';
+      const select = document.getElementById('edit_officer');
+      select.innerHTML = '<option value="">— Unassigned (back to pending) —</option>' +
+        pmuOfficers.map((o) => `<option value="${o.id}" ${o.id === inspection.assigned_to ? 'selected' : ''}>${o.name}</option>`).join('');
+      document.getElementById('editMsg').innerHTML = '';
+      document.getElementById('editOverlay').classList.remove('hidden');
+    }
+
+    function closeEditModal() {
+      document.getElementById('editOverlay').classList.add('hidden');
+    }
+
+    document.getElementById('editCancelBtn')?.addEventListener('click', closeEditModal);
+
+    document.getElementById('editForm')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = document.getElementById('edit_id').value;
+      const dueDate = document.getElementById('edit_due').value || null;
+      const officerVal = document.getElementById('edit_officer').value;
+      const assignedTo = officerVal === '' ? null : Number(officerVal);
+
+      try {
+        await VX.request(`/inspections/${id}`, { method: 'PUT', body: { dueDate, assignedTo } });
+        closeEditModal();
+        showMsg('Inspection updated.', 'success');
+        loadInspections();
+      } catch (err) {
+        document.getElementById('editMsg').innerHTML = `<div class="msg error">${err.message}</div>`;
+      }
+    });
+
+    async function deleteInspection(id) {
+      if (!confirm('Delete this inspection? This cannot be undone.')) return;
+      try {
+        await VX.request(`/inspections/${id}`, { method: 'DELETE' });
+        showMsg('Inspection deleted.', 'success');
+        loadInspections();
+      } catch (err) {
+        showMsg(err.message, 'error');
+      }
+    }
+
     async function loadInspections() {
       try {
         const data = await VX.request('/inspections');
@@ -72,10 +150,14 @@
           tbody.innerHTML = '<tr><td colspan="6">No inspections found.</td></tr>';
           return;
         }
+        window._inspectionsById = {};
+        data.inspections.forEach((i) => { window._inspectionsById[i.id] = i; });
+
         tbody.innerHTML = data.inspections.map((i) => {
           const mine = user.role === 'pmu' && i.assigned_to === user.id;
           const canStart = mine && (i.status === 'assigned');
           const canReport = mine && (i.status === 'in_progress' || i.status === 'assigned');
+          const isAdmin = user.role === 'admin';
           return `
             <tr>
               <td>${i.institute_name}</td>
@@ -86,6 +168,7 @@
               <td>
                 ${canStart ? `<button class="btn small" onclick="updateStatus(${i.id}, 'in_progress')">Start</button>` : ''}
                 ${canReport ? ` <a class="btn small secondary" href="/report-submit.html?inspectionId=${i.id}">Submit report</a>` : ''}
+                ${isAdmin ? ` <button class="btn small secondary" onclick='openEditModal(window._inspectionsById[${i.id}])'>Edit</button> <button class="btn small secondary" onclick="deleteInspection(${i.id})">Delete</button>` : ''}
               </td>
             </tr>
           `;
@@ -96,6 +179,7 @@
     }
 
     loadInspections();
+    loadPmuOfficers();
   </script>
 </body>
 </html>
