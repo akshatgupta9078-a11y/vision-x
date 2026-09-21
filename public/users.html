@@ -71,9 +71,29 @@
             <td>${u.role}</td>
             <td>${u.division || '—'}</td>
             <td>${new Date(u.created_at + 'Z').toLocaleDateString()}</td>
-            <td>${u.id === user.id ? '<span style="color:var(--ink-soft); font-size:0.8rem;">(you)</span>' : `<button class="btn small secondary" onclick="deleteUser(${u.id})">Delete</button>`}</td>
+            <td>
+              ${u.id === user.id ? '<span style="color:var(--ink-soft); font-size:0.8rem;">(you)</span>' : `
+                <button class="btn small secondary" onclick="resetPassword(${u.id}, '${u.name.replace(/'/g, "\\'")}')">Reset password</button>
+                <button class="btn small secondary" onclick="deleteUser(${u.id})">Delete</button>
+              `}
+            </td>
           </tr>
         `).join('');
+      } catch (err) {
+        showMsg(err.message, 'error');
+      }
+    }
+
+    async function resetPassword(id, name) {
+      const newPassword = prompt(`Set a new password for ${name} (min 6 characters):`);
+      if (!newPassword) return;
+      if (newPassword.length < 6) {
+        showMsg('Password must be at least 6 characters.', 'error');
+        return;
+      }
+      try {
+        await VX.request(`/auth/users/${id}/reset-password`, { method: 'POST', body: { newPassword } });
+        showMsg(`Password reset for ${name}. Share the new password with them securely.`, 'success');
       } catch (err) {
         showMsg(err.message, 'error');
       }

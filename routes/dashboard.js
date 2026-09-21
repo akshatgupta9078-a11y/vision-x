@@ -42,4 +42,27 @@ router.get('/summary', authenticate, (req, res) => {
   });
 });
 
+// GET /api/dashboard/export — admin-only: full JSON backup of all data.
+// Passwords are never included. This is a simple, manual backup mechanism —
+// there is no automatic/scheduled backup on the free hosting tier, so an
+// admin should download this periodically if the data matters.
+router.get('/export', authenticate, (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Only admins can export data.' });
+  }
+
+  const users = db.prepare('SELECT id, name, email, role, division, created_at FROM users').all();
+  const institutes = db.prepare('SELECT * FROM institutes').all();
+  const inspections = db.prepare('SELECT * FROM inspections').all();
+  const reports = db.prepare('SELECT * FROM reports').all();
+  const accessRequests = db.prepare('SELECT * FROM access_requests').all();
+
+  res.setHeader('Content-Disposition', `attachment; filename="vision-x-backup-${new Date().toISOString().slice(0, 10)}.json"`);
+  res.json({
+    exportedAt: new Date().toISOString(),
+    note: 'This backup does not include password hashes. Restoring requires re-creating accounts.',
+    users, institutes, inspections, reports, accessRequests,
+  });
+});
+
 module.exports = router;

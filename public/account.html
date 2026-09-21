@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VISION-X — My Account</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="topbar" id="topbar"></div>
+
+  <div class="wrap">
+    <h1>My account</h1>
+    <p class="sub" id="whoami">Loading…</p>
+
+    <div id="msgBox"></div>
+
+    <div class="panel" style="max-width:420px;">
+      <h2>Change password</h2>
+      <form class="stacked" id="pwForm">
+        <label>Current password</label>
+        <input type="password" id="current_pw" required>
+        <label>New password (min 6 characters)</label>
+        <input type="password" id="new_pw" minlength="6" required>
+        <label>Confirm new password</label>
+        <input type="password" id="confirm_pw" minlength="6" required>
+        <button type="submit" class="btn" id="pwBtn">Update password</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    const user = VX.requireAuth();
+    VX.renderTopbar('account');
+
+    if (user) {
+      document.getElementById('whoami').textContent = `${user.name} · ${user.email} · ${user.role}`;
+    }
+
+    function showMsg(text, type) {
+      document.getElementById('msgBox').innerHTML = `<div class="msg ${type}">${text}</div>`;
+    }
+
+    document.getElementById('pwForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const current = document.getElementById('current_pw').value;
+      const next = document.getElementById('new_pw').value;
+      const confirm = document.getElementById('confirm_pw').value;
+
+      if (next !== confirm) {
+        showMsg('New password and confirmation do not match.', 'error');
+        return;
+      }
+
+      const btn = document.getElementById('pwBtn');
+      btn.disabled = true;
+      try {
+        await VX.request('/auth/change-password', {
+          method: 'POST',
+          body: { currentPassword: current, newPassword: next },
+        });
+        showMsg('Password updated. Use it next time you log in.', 'success');
+        document.getElementById('pwForm').reset();
+      } catch (err) {
+        showMsg(err.message, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

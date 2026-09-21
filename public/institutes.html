@@ -38,10 +38,40 @@
 
     <div class="panel">
       <h2>All institutes</h2>
+      <input type="text" id="searchBox" placeholder="Search by name, type, or district…" style="margin-bottom:14px; width:100%; max-width:360px; padding:10px 12px; border:1px solid var(--line); border-radius:4px; background:var(--paper-dim); color:var(--ink); font-family:var(--sans); font-size:0.9rem;">
       <table>
         <thead><tr><th>Name</th><th>Type</th><th>District</th><th>Location</th><th></th></tr></thead>
         <tbody id="tableBody"><tr><td colspan="5">Loading…</td></tr></tbody>
       </table>
+    </div>
+  </div>
+
+  <!-- Admin/authority-only edit panel -->
+  <div id="editOverlay" class="hidden" style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:50;">
+    <div class="panel" style="width:100%; max-width:420px; margin:0;">
+      <h2>Edit institute</h2>
+      <div id="editMsg"></div>
+      <form class="stacked" id="editInstituteForm">
+        <input type="hidden" id="edit_inst_id">
+        <label>Name</label>
+        <input type="text" id="edit_inst_name" required>
+        <label>Type</label>
+        <input type="text" id="edit_inst_type" required>
+        <label>District</label>
+        <input type="text" id="edit_inst_district" required>
+        <label>Address</label>
+        <input type="text" id="edit_inst_address">
+        <label>Latitude</label>
+        <input type="number" step="any" id="edit_inst_lat">
+        <label>Longitude</label>
+        <input type="number" step="any" id="edit_inst_lng">
+        <label>CCTV Stream URL</label>
+        <input type="text" id="edit_inst_cctv">
+        <div style="display:flex; gap:10px; margin-top:6px;">
+          <button type="submit" class="btn" id="editInstSaveBtn">Save changes</button>
+          <button type="button" class="btn secondary" id="editInstCancelBtn">Cancel</button>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -58,26 +88,101 @@
       document.getElementById('msgBox').innerHTML = `<div class="msg ${type}">${text}</div>`;
     }
 
+    let allInstitutes = [];
+
+    function renderInstitutes(list) {
+      const tbody = document.getElementById('tableBody');
+      const canEdit = user && (user.role === 'admin' || user.role === 'authority');
+      const canDelete = user && user.role === 'admin';
+
+      if (list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5">No institutes match.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = list.map((i) => `
+        <tr>
+          <td>${i.name}</td>
+          <td>${i.type}</td>
+          <td>${i.district}</td>
+          <td>${i.latitude && i.longitude ? `${i.latitude.toFixed(3)}, ${i.longitude.toFixed(3)}` : '—'}</td>
+          <td>
+            <a href="/inspections.html">Inspections →</a>
+            ${i.cctv_stream_url ? ` &nbsp;|&nbsp; <a href="/camera.html?instituteId=${i.id}">📷 Camera</a>` : ''}
+            ${canEdit ? ` &nbsp;|&nbsp; <button class="btn small secondary" onclick='openEditInstitute(${JSON.stringify(i)})'>Edit</button>` : ''}
+            ${canDelete ? ` <button class="btn small secondary" onclick="deleteInstitute(${i.id})">Delete</button>` : ''}
+          </td>
+        </tr>
+      `).join('');
+    }
+
     async function loadInstitutes() {
       try {
         const data = await VX.request('/institutes');
-        const tbody = document.getElementById('tableBody');
-        if (data.institutes.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="5">No institutes yet.</td></tr>';
-          return;
-        }
-        tbody.innerHTML = data.institutes.map((i) => `
-          <tr>
-            <td>${i.name}</td>
-            <td>${i.type}</td>
-            <td>${i.district}</td>
-            <td>${i.latitude && i.longitude ? `${i.latitude.toFixed(3)}, ${i.longitude.toFixed(3)}` : '—'}</td>
-            <td>
-              <a href="/inspections.html">Inspections →</a>
-              ${i.cctv_stream_url ? ` &nbsp;|&nbsp; <a href="/camera.html?instituteId=${i.id}">📷 View camera</a>` : ''}
-            </td>
-          </tr>
-        `).join('');
+        allInstitutes = data.institutes;
+        applyFilter();
+      } catch (err) {
+        showMsg(err.message, 'error');
+      }
+    }
+
+    function applyFilter() {
+      const q = (document.getElementById('searchBox').value || '').trim().toLowerCase();
+      const filtered = !q ? allInstitutes : allInstitutes.filter((i) =>
+        [i.name, i.type, i.district].some((f) => (f || '').toLowerCase().includes(q))
+      );
+      renderInstitutes(filtered);
+    }
+
+    document.getElementById('searchBox').addEventListener('input', applyFilter);
+
+    // ---- Edit / Delete (admin & authority) ----
+    function openEditInstitute(i) {
+      document.getElementById('edit_inst_id').value = i.id;
+      document.getElementById('edit_inst_name').value = i.name || '';
+      document.getElementById('edit_inst_type').value = i.type || '';
+      document.getElementById('edit_inst_district').value = i.district || '';
+      document.getElementById('edit_inst_address').value = i.address || '';
+      document.getElementById('edit_inst_lat').value = i.latitude ?? '';
+      document.getElementById('edit_inst_lng').value = i.longitude ?? '';
+      document.getElementById('edit_inst_cctv').value = i.cctv_stream_url || '';
+      document.getElementById('editMsg').innerHTML = '';
+      document.getElementById('editOverlay').classList.remove('hidden');
+    }
+
+    document.getElementById('editInstCancelBtn').addEventListener('click', () => {
+      document.getElementById('editOverlay').classList.add('hidden');
+    });
+
+    document.getElementById('editInstituteForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = document.getElementById('edit_inst_id').value;
+      try {
+        await VX.request(`/institutes/${id}`, {
+          method: 'PUT',
+          body: {
+            name: document.getElementById('edit_inst_name').value,
+            type: document.getElementById('edit_inst_type').value,
+            district: document.getElementById('edit_inst_district').value,
+            address: document.getElementById('edit_inst_address').value,
+            latitude: document.getElementById('edit_inst_lat').value || null,
+            longitude: document.getElementById('edit_inst_lng').value || null,
+            cctv_stream_url: document.getElementById('edit_inst_cctv').value || null,
+          },
+        });
+        document.getElementById('editOverlay').classList.add('hidden');
+        showMsg('Institute updated.', 'success');
+        loadInstitutes();
+      } catch (err) {
+        document.getElementById('editMsg').innerHTML = `<div class="msg error">${err.message}</div>`;
+      }
+    });
+
+    async function deleteInstitute(id) {
+      if (!confirm('Delete this institute? Its inspections and reports stay in the database, but the institute record itself will be gone. This cannot be undone.')) return;
+      try {
+        await VX.request(`/institutes/${id}`, { method: 'DELETE' });
+        showMsg('Institute deleted.', 'success');
+        loadInstitutes();
       } catch (err) {
         showMsg(err.message, 'error');
       }

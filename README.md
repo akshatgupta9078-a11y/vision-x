@@ -23,6 +23,12 @@ This is a **real, runnable application** — not a mockup. It uses:
 | Mobile report submission (photo + GPS + notes) | ✅ Fully working (uses your browser's real GPS) |
 | Anomaly flagging | ✅ Fully working (simple rule-based check on attendance ratios) |
 | Photo authenticity check | ✅ Working, but **metadata-based, not a trained AI model** — see note below |
+| Login rate limiting | ✅ Fully working (10 attempts / 15 min per device) |
+| Password change (self) & admin reset | ✅ Fully working (`/account.html`, and a "Reset password" button on `/users.html`) |
+| Institute edit/delete UI | ✅ Fully working (buttons on `/institutes.html`, admin/authority only) |
+| Search/filter on Institutes & Inspections | ✅ Fully working (client-side, instant) |
+| Load-balanced random assignment | ✅ Fully working (picks randomly among the least-loaded officers, not pure uniform random) |
+| Admin data backup/export | ✅ Fully working ("Download full data backup" on the dashboard) |
 | Real-time dashboard | ✅ Fully working (polls the database every 15s) |
 | Access-request form endpoint | ✅ Fully working (`POST /api/auth/access-requests`) |
 | Live CCTV feed integration | ⛔ Placeholder only — needs a real camera/RTSP provider |
@@ -234,6 +240,34 @@ This project no longer depends on `better-sqlite3` — it uses Node's built-in `
 
 **You see `ExperimentalWarning: SQLite is an experimental feature`**
 This is expected and harmless — it's just Node.js labeling its built-in SQLite support as experimental. The app works normally.
+
+## Known limitations (be upfront about these)
+
+These are real gaps that can't be fixed with a code change alone — they need
+either paid infrastructure, real hardware, or a scope decision. Be honest
+about them if asked:
+
+- **Uploaded photos aren't permanently safe on the free hosting tier.**
+  Render's free plan doesn't guarantee persistent disk storage — a restart
+  or redeploy can wipe `/uploads`. Fix: a paid plan with a persistent disk,
+  or store photos on a cloud service (S3, Cloudinary) instead of locally.
+- **The database can also reset on the free tier** for the same reason.
+  Use the new **"Download full data backup"** button on the admin dashboard
+  regularly, or move to a managed database (e.g. PostgreSQL on a paid plan)
+  for anything that must not be lost.
+- **GPS location can be spoofed** by apps that fake a device's location.
+  Nothing in a browser-based check can fully prevent this — a hardened
+  version would need a native mobile app with stronger device attestation.
+- **The photo authenticity check is a metadata heuristic, not an AI model**
+  (see the dedicated section above) — it catches common cases, not a
+  determined forger.
+- **SQLite isn't built for heavy concurrent load.** Fine for a pilot or a
+  few hundred users; a statewide rollout with many simultaneous users
+  should move to PostgreSQL.
+- **No email verification, no 2FA, no offline mode.** Signup accepts any
+  email without confirming it belongs to the person; there's no second
+  factor on login; and the app needs an internet connection to submit a
+  report (no offline queue-and-sync).
 
 ## Next steps to make this production-ready
 

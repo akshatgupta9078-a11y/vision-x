@@ -2,14 +2,33 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const rateLimit = require('express-rate-limit');
 const db = require('../db');
 const { authenticate, authorize, JWT_SECRET } = require('../middleware/auth');
 
 const router = express.Router();
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
 
+// Slows down brute-force password guessing / mass fake-account creation.
+// Keyed by IP; a genuine user mistyping a password a few times is unaffected.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts from this device. Please wait 15 minutes and try again.' },
+});
+
+const signupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many accounts created from this device recently. Please try again later.' },
+});
+
 // POST /api/auth/login
-router.post('/login', (req, res) => {
+router.post('/login', loginLimiter, (req, res) => {
   const { email, password } = req.body || {};
 
   if (!email || !password) {
@@ -72,7 +91,7 @@ router.get('/access-requests', authenticate, (req, res) => {
 // own account here, like a real open platform. Admin role is deliberately
 // excluded from public signup — only an existing admin can create another
 // admin (via POST /api/auth/users) or hand-pick one via /setup-admin.
-router.post('/signup', (req, res) => {
+router.post('/signup', signupLimiter, (req, res) => {
   const { name, email, password, role, division } = req.body || {};
   const publicRoles = ['pmu', 'ngo', 'authority'];
 
@@ -185,6 +204,44 @@ router.delete('/users/:id', authenticate, authorize('admin'), (req, res) => {
   const info = db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
   if (info.changes === 0) return res.status(404).json({ error: 'User not found.' });
   res.json({ message: 'User deleted.' });
+});
+
+// POST /api/auth/change-password — any logged-in user changes their own
+// password, after proving they know the current one.
+router.post('/change-password', authenticate, (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'currentPassword and newPassword are both required.' });
+  }
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: 'New password must be at least 6 characters.' });
+  }
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user || !bcrypt.compareSync(currentPassword, user.password_hash)) {
+    return res.status(401).json({ error: 'Current password is incorrect.' });
+  }
+
+  const hash = bcrypt.hashSync(newPassword, 10);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, req.user.id);
+  res.json({ message: 'Password changed successfully.' });
+});
+
+// POST /api/auth/users/:id/reset-password — admin-only: set a new password
+// for someone who's locked out, without needing their old one.
+router.post('/users/:id/reset-password', authenticate, authorize('admin'), (req, res) => {
+  const { newPassword } = req.body || {};
+  if (!newPassword || newPassword.length < 6) {
+    return res.status(400).json({ error: 'newPassword is required and must be at least 6 characters.' });
+  }
+
+  const user = db.prepare('SELECT id FROM users WHERE id = ?').get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'User not found.' });
+
+  const hash = bcrypt.hashSync(newPassword, 10);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, req.params.id);
+  res.json({ message: 'Password reset successfully. Share the new password with the user securely.' });
 });
 
 module.exports = router;

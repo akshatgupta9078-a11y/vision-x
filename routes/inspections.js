@@ -63,17 +63,33 @@ router.post('/assign-random', authenticate, authorize('admin', 'authority'), (re
     `UPDATE inspections SET assigned_to = ?, status = 'assigned', assigned_at = datetime('now') WHERE id = ?`
   );
 
+  // Track each officer's total assignment count in the last 30 days, so the
+  // pick can be biased away from whoever already has the heaviest recent
+  // load — this keeps the choice random (fair to predict) while stopping
+  // the same one or two officers from being picked far more than everyone
+  // else purely by chance over many rounds.
+  const countRows = db.prepare(`
+    SELECT assigned_to AS officerId, COUNT(*) AS n
+    FROM inspections
+    WHERE assigned_to IS NOT NULL AND assigned_at >= datetime('now', '-30 days')
+    GROUP BY assigned_to
+  `).all();
+  const loadCount = {};
+  pmuUsers.forEach((o) => { loadCount[o.id] = 0; });
+  countRows.forEach((row) => { loadCount[row.officerId] = row.n; });
+
   const assigned = [];
 
-  // Fisher-Yates shuffle of the PMU pool per inspection keeps assignment
-  // unpredictable rather than a simple round-robin, which would still be
-  // guessable by whoever is watching the roster.
   for (const inspection of pendingInspections) {
-    const pool = [...pmuUsers];
-    const randomIndex = Math.floor(Math.random() * pool.length);
-    const chosenOfficer = pool[randomIndex];
+    // Pick randomly among whichever officer(s) currently have the fewest
+    // assignments in the last 30 days — a "least-loaded, then random" pick.
+    const minLoad = Math.min(...pmuUsers.map((o) => loadCount[o.id]));
+    const leastLoaded = pmuUsers.filter((o) => loadCount[o.id] === minLoad);
+    const chosenOfficer = leastLoaded[Math.floor(Math.random() * leastLoaded.length)];
 
     update.run(chosenOfficer.id, inspection.id);
+    loadCount[chosenOfficer.id] += 1; // so the next pick in this same batch also balances
+
     assigned.push({
       inspectionId: inspection.id,
       instituteId: inspection.institute_id,

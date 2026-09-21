@@ -12,6 +12,9 @@
   <div class="wrap">
     <h1>Real-time monitoring dashboard</h1>
     <p class="sub" id="subline">Loading live data…</p>
+    <div id="backupRow" class="hidden" style="margin-bottom:18px;">
+      <a class="btn secondary small" id="backupLink" href="#" target="_blank">⬇ Download full data backup (JSON)</a>
+    </div>
 
     <div id="errorBox"></div>
 
@@ -32,8 +35,32 @@
 
   <script src="/js/api.js"></script>
   <script>
-    VX.requireAuth();
+    const currentUser = VX.requireAuth();
     VX.renderTopbar('dashboard');
+
+    if (currentUser && currentUser.role === 'admin') {
+      document.getElementById('backupRow').classList.remove('hidden');
+      document.getElementById('backupLink').addEventListener('click', async (e) => {
+        e.preventDefault();
+        try {
+          const res = await fetch('/api/dashboard/export', {
+            headers: { Authorization: `Bearer ${VX.getToken()}` },
+          });
+          if (!res.ok) throw new Error('Export failed.');
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `vision-x-backup-${new Date().toISOString().slice(0, 10)}.json`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+        } catch (err) {
+          alert('Backup download failed: ' + err.message);
+        }
+      });
+    }
 
     async function load() {
       try {
